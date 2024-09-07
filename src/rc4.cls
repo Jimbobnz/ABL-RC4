@@ -1,42 +1,35 @@
  
 /*------------------------------------------------------------------------
-   File        : rc4
-   Purpose     : 
+   File        : rc4.cls
+   Purpose     : Class Object to encrypt/decrept data
    Syntax      : 
    Description : 
    Author(s)   : James Bowen
    Created     : Wed Aug 28 09:14:34 NZST 2024
-   Notes       : 
+   Notes       : RC4 (also known as ARC4) is a stream cipher used in 
+                 popular protocols such as SSL and WEP. While remarkable 
+                 for its simplicity and speed, multiple vulnerabilities 
+                 have rendered it insecure.
  ----------------------------------------------------------------------*/
 
 USING Progress.Lang.*.
 
 BLOCK-LEVEL ON ERROR UNDO, THROW.
 
-CLASS rc4: 
+CLASS rc4:
+    
+    DEFINE STATIC TEMP-TABLE ttPrivateKey NO-UNDO
+        FIELD indexPos  AS INTEGER
+        FIELD valueByte AS INTEGER
+        INDEX idxIndexPos IS PRIMARY UNIQUE
+        indexPos.
+        .
 
-    /*------------------------------------------------------------------------------
-     Purpose:
-     Notes:
-    ------------------------------------------------------------------------------*/
-
-    METHOD PRIVATE STATIC INTEGER bitAnd( INPUT X AS INTEGER, INPUT Y AS INTEGER):
-
-        DEFINE VARIABLE b AS INTEGER NO-UNDO.
-        DEFINE VARIABLE n AS INTEGER NO-UNDO.
-        DEFINE VARIABLE Z AS INTEGER NO-UNDO.
-
-        DO n = 1 TO 32:
-            IF GET-BITS(X, n, 1) = 1 AND get-bits(Y, n, 1) = 1 THEN
-                b = 1.
-
-            PUT-BITS(Z, n, 1) = b.
-            b = 0.
-        END.
-
-        RETURN Z.
-
-    END METHOD.
+    DEFINE STATIC TEMP-TABLE ttS NO-UNDO
+        FIELD indexPos  AS INTEGER
+        FIELD valueByte AS INTEGER
+        INDEX idxIndexPos IS PRIMARY UNIQUE
+        indexPos. 
 
     /*------------------------------------------------------------------------------
      Purpose:
@@ -48,7 +41,7 @@ CLASS rc4:
         DEFINE VARIABLE b2 AS INTEGER NO-UNDO.
         DEFINE VARIABLE n  AS INTEGER NO-UNDO.
         DEFINE VARIABLE Z  AS INTEGER NO-UNDO.
-
+        
         DO n = 1 TO 32:
             ASSIGN
                 b1 = GET-BITS(X, n, 1)
@@ -77,7 +70,6 @@ CLASS rc4:
         ASSIGN
             datalc       = data
             privateKeylc = privateKey.
-            
         
         resultlc = Cipher(INPUT datalc, INPUT privateKeylc ).
         
@@ -85,7 +77,7 @@ CLASS rc4:
         
     END METHOD.
     
-    METHOD PUBLIC STATIC CHARACTER Cipher(INPUT data AS CHARACTER, INPUT privateKey AS longchar):
+    METHOD PUBLIC STATIC CHARACTER Cipher(INPUT data AS CHARACTER, INPUT privateKey AS LONGCHAR):
         
         DEFINE VARIABLE result   AS CHARACTER NO-UNDO.
         DEFINE VARIABLE resultlc AS LONGCHAR  NO-UNDO.
@@ -96,7 +88,7 @@ CLASS rc4:
             
         resultlc = Cipher(INPUT datalc, INPUT privateKey ).
         
-        RETURN string(resultlc).
+        RETURN STRING(resultlc).
         
     END METHOD.    
     
@@ -104,7 +96,6 @@ CLASS rc4:
         
         DEFINE VARIABLE result       AS CHARACTER NO-UNDO.
         DEFINE VARIABLE resultlc     AS LONGCHAR  NO-UNDO.
-        
         
         DEFINE VARIABLE privateKeylc AS LONGCHAR  NO-UNDO.
         
@@ -116,7 +107,7 @@ CLASS rc4:
         
     END METHOD.    
     
-    METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS longchar  ):
+    METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS LONGCHAR  ):
         
         DEFINE VARIABLE privateKeyMemptr AS MEMPTR  NO-UNDO.
         DEFINE VARIABLE privateKeyLength AS INTEGER NO-UNDO.
@@ -132,7 +123,6 @@ CLASS rc4:
         
         FINALLY:
             set-size(privateKeyMemptr) = 0.
-            
         END.
         
     END METHOD.       
@@ -196,78 +186,20 @@ CLASS rc4:
         
     END METHOD.    
     
-
-    
     METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS MEMPTR  ):
         
-        DEFINE VARIABLE a          AS INTEGER NO-UNDO.
-        DEFINE VARIABLE i          AS INTEGER NO-UNDO.
-        DEFINE VARIABLE j          AS INTEGER NO-UNDO.
-        DEFINE VARIABLE k          AS INTEGER NO-UNDO.
-        DEFINE VARIABLE tmp        AS INTEGER NO-UNDO.
-        DEFINE VARIABLE key        AS INTEGER EXTENT 256 NO-UNDO.
-        DEFINE VARIABLE box        AS INTEGER EXTENT 256 NO-UNDO.
-        DEFINE VARIABLE dataLength AS INTEGER NO-UNDO.
-        DEFINE VARIABLE pwdLength  AS INTEGER NO-UNDO.
-        DEFINE VARIABLE cipher     AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE cPtr       AS INTEGER NO-UNDO. /* Pointer for MEMPTR manipulation */
-    
-    
-        /* Initialize lengths */
-        ASSIGN
-            dataLength = GET-SIZE(data)
-            pwdLength  = GET-SIZE(privateKey).
-
-        /* Allocate memory for the cipher */
-        SET-SIZE(cipher) = 0.
-        SET-SIZE(cipher) = dataLength.
-        cPtr = 1.
-
-        /* Key-scheduling algorithm (KSA) */
-        DO i = 1 TO 256:
-            ASSIGN
-                key[i] = GET-BYTE(privateKey, (i - 1) MODULO pwdLength + 1)
-                box[i] = i - 1.
-        END.
-
-        j = 1.
-        DO i = 1 TO 256:
-            j = (j + box[i] + key[i]) MODULO 256 + 1.
-            /* Swap */
-            ASSIGN
-                tmp    = box[i]
-                box[i] = box[j]
-                box[j] = tmp.
-        END.
-
-        /* Pseudo-random generation algorithm (PRGA) */
-        a = 1.
-        j = 1.
-        DO i = 1 TO dataLength:
-            ASSIGN
-                a = a MODULO 256 + 1
-                j = (j + box[a]) MODULO 256 + 1.
         
-            /* Swap */
-            ASSIGN
-                tmp    = box[a]
-                box[a] = box[j]
-                box[j] = tmp.
-
-            ASSIGN    
-                k   = box[(box[a] + box[j]) MODULO 256 + 1]
-                tmp = bitXOR(GET-BYTE(data, i),  k).  // XOR the data with the generated key stream and store in cipher
+        IF GET-SIZE(privateKey) < 1 OR get-size(privateKey) > 256 THEN
+            RETURN ERROR "Invalid password length".
         
-            PUT-BYTE(cipher, cPtr) = bitAnd(tmp, 255).
+        /* Initialise */
+        KSA(INPUT privateKey).
         
-            cPtr = cPtr + 1.
-        END.
-        
-        RETURN cipher.
+        RETURN PRGA(INPUT data ).
         
         FINALLY:
             
-            set-size(cipher) = 0.
+        
             set-size(data) = 0.
             set-size(privateKey) = 0.
             
@@ -275,11 +207,231 @@ CLASS rc4:
 
     END METHOD.
 
-/*------------------------------------------------------------------------------
- Purpose:
- Notes:
-------------------------------------------------------------------------------*/
+    /*------------------------------------------------------------------------------
+     Purpose: EncryptingFiles
+     Notes:
+    ------------------------------------------------------------------------------*/
+
+    METHOD PUBLIC STATIC LOGICAL CipherFile( INPUT dataSourceFilename AS CHARACTER, 
+                                             INPUT dataTargetFilename AS CHARACTER, 
+                                             INPUT privateKey         AS CHARACTER):
+        
+        DEFINE VARIABLE result     AS LOGICAL NO-UNDO.
+        DEFINE VARIABLE dataSource AS MEMPTR  NO-UNDO.
+        DEFINE VARIABLE dataTarget AS MEMPTR  NO-UNDO.
+
+        COPY-LOB FROM FILE dataSourceFilename TO dataSource.
+        
+        dataTarget = Cipher(INPUT dataSource, INPUT privateKey).
+        
+        COPY-LOB FROM OBJECT dataTarget TO FILE dataTargetFilename.
+        
+        RETURN (IF SEARCH(dataTargetFilename) NE ? THEN TRUE ELSE FALSE).
+        
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose:  privateKey Scheduling Algorithm (KSA) 
+     Notes:
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC VOID KSA( INPUT  privateKey AS MEMPTR ):
+        
+        DEFINE VARIABLE privateKeyLength AS INTEGER NO-UNDO.
+        DEFINE VARIABLE i                AS INTEGER NO-UNDO.
+        DEFINE VARIABLE j                AS INTEGER NO-UNDO.
     
+        ASSIGN
+            privateKeyLength = GET-SIZE(privateKey).
     
+        /* Initialize the S temp-table array */
+        EMPTY TEMP-TABLE ttS.
+        EMPTY TEMP-TABLE ttPrivateKey.
+    
+        DO i = 0 TO 255:
+            CREATE ttS.
+            ASSIGN
+                ttS.indexPos  = i
+                ttS.valueByte = i.
+            RELEASE ttS.
+        END.
+    
+        DO i = 1 TO privateKeyLength :
+            CREATE ttPrivateKey.
+        
+            ASSIGN
+                ttPrivateKey.indexPos  = i - 1
+                ttPrivateKey.valueByte = GET-BYTE(privateKey, i).
+            RELEASE ttPrivateKey.    
+        END.
+    
+        ASSIGN
+            j = 0.
+
+        DO i = 0 TO 255:
+            j = (j + StreamByteValue(i) + KeyByteValue( i MOD privateKeyLength )) MOD 256.
+            Swap(i, j).
+        END.
+        
+        RETURN .
+
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose: Psudo Random Generation Algorithm
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC MEMPTR PRGA( INPUT inputData AS MEMPTR ):
+        
+    
+        DEFINE VARIABLE outputData           AS MEMPTR  NO-UNDO.
+        DEFINE VARIABLE byteToEncrypt        AS INTEGER NO-UNDO.
+    
+        /* Encrypt/Decrypt */
+        
+        DEFINE VARIABLE inputDataLength      AS INTEGER NO-UNDO.
+        DEFINE VARIABLE privateKeyStreamByte AS INTEGER NO-UNDO.
+        DEFINE VARIABLE i                    AS INTEGER NO-UNDO.
+        DEFINE VARIABLE x                    AS INTEGER NO-UNDO.
+        DEFINE VARIABLE y                    AS INTEGER NO-UNDO.
+
+        ASSIGN    
+            inputDataLength = GET-SIZE(inputData).
+    
+        set-size(outputData) = 0.
+        set-size(outputData) = inputDataLength.
+        
+        ASSIGN
+            x = 0
+            y = 0.
+
+        DO i = 1 TO inputDataLength:
+            
+            IF ETIME MOD 500 EQ 0 THEN 
+                PROCESS EVENTS.
+            
+            ASSIGN
+                x = (x + 1) MOD 256
+                y = (y + StreamByteValue(x)) MOD 256.
+
+            Swap(x, y).
+            
+            ASSIGN
+                privateKeyStreamByte = StreamByteValue( (StreamByteValue(x) + StreamByteValue(y)) MOD 256)
+                byteToEncrypt        = GET-BYTE(inputData, i).
+                
+            put-byte(outputData,i) = bitXOR( byteToEncrypt , privateKeyStreamByte ).
+        
+        END.
+    
+        RETURN outputData.
+
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose: Helper Method to convert a string into HEX notation.
+    ------------------------------------------------------------------------------*/
+    
+    METHOD PUBLIC STATIC LONGCHAR StringToHex( INPUT stringData AS CHARACTER ):
+        
+        RETURN StringToHex( INPUT stringData , INPUT FALSE ).
+        
+    END METHOD.    
+
+    METHOD PUBLIC STATIC LONGCHAR StringToHex( INPUT stringData AS CHARACTER, INPUT formatted AS LOGICAL ):
+        
+        DEFINE VARIABLE result           AS LONGCHAR NO-UNDO.
+        DEFINE VARIABLE memprtData       AS MEMPTR   NO-UNDO.
+        DEFINE VARIABLE stringDataLength AS INTEGER  NO-UNDO.
+        DEFINE VARIABLE i                AS INTEGER  NO-UNDO.
+        
+        stringDataLength =  LENGTH(stringData,"RAW").
+        
+        IF stringDataLength GT 0 THEN
+        DO:
+        
+            set-size(memprtData) = 0.
+            set-size(memprtData) = stringDataLength.
+            
+            put-string(memprtData,1,stringDataLength) = stringData.
+            
+            result = HEX-ENCODE(memprtData).
+        
+        END.
+        
+        IF formatted THEN
+        DO:
+            
+            i = 1.
+            DO WHILE i < length(result):
+                SUBSTRING(result, i, 0, "CHARACTER" ) = " ".
+                i = i + 3.  // move along to the 3rd character
+            END.
+            
+            result = TRIM(result).
+            
+        END.
+            
+        RETURN result.
+        
+        FINALLY:
+            set-size(memprtData) = 0.
+        END.
+
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose:
+     Notes:
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC VOID Swap(INPUT i AS INTEGER, INPUT j AS INTEGER  ):
+        
+        DEFINE VARIABLE temp AS INTEGER NO-UNDO.
+    
+        DEFINE BUFFER buffer1 FOR TEMP-TABLE ttS.
+        DEFINE BUFFER buffer2 FOR TEMP-TABLE ttS.
+    
+        FIND buffer1 WHERE buffer1.indexPos EQ i.
+        FIND buffer2 WHERE buffer2.indexPos EQ j.
+    
+        ASSIGN
+            temp              = buffer1.valueByte
+            buffer1.valueByte = buffer2.valueByte
+            buffer2.valueByte = temp.
+        
+        RETURN.
+
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose:
+     Notes:
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC INTEGER KeyByteValue( INPUT pIndexPos AS INTEGER ):
+            
+        DEFINE BUFFER ttPrivateKeyBuffer FOR TEMP-TABLE ttPrivateKey.
+    
+        FIND ttPrivateKeyBuffer WHERE ttPrivateKeyBuffer.indexPos EQ pIndexPos.
+    
+        RETURN ttPrivateKeyBuffer.valueByte.
+
+    END METHOD.
+
+    /*------------------------------------------------------------------------------
+     Purpose:
+     Notes:
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC INTEGER StreamByteValue( INPUT pIndexPos AS INTEGER ):
+        
+        DEFINE BUFFER ttBuffer FOR TEMP-TABLE ttS.
+    
+        FIND ttBuffer WHERE ttBuffer.indexPos EQ pIndexPos.
+    
+        RETURN ttBuffer.valueByte.
+
+    END METHOD.
 
 END CLASS.
