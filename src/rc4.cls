@@ -31,9 +31,10 @@ CLASS rc4:
         INDEX idxIndexPos IS PRIMARY UNIQUE
         indexPos. 
 
+    DEFINE PUBLIC STATIC EVENT StreamProgress SIGNATURE VOID (INPUT streamPos AS DECIMAL, INPUT streamSize AS DECIMAL).
+
     /*------------------------------------------------------------------------------
-     Purpose:
-     Notes:
+     Purpose: bitXOR method because OpenEdge ABL does not have it's own bitwise opertor
     ------------------------------------------------------------------------------*/
 
     METHOD PRIVATE STATIC INTEGER bitXOR(INPUT X AS INTEGER, INPUT Y AS INTEGER):
@@ -49,147 +50,100 @@ CLASS rc4:
                 .
             IF b1 + b2 = 1 THEN PUT-BITS(Z, n, 1) = 1.
         END.
-
+    
         RETURN Z.
 
     END METHOD.
 
     /*------------------------------------------------------------------------------
-     Purpose:
-     Notes:
-    ------------------------------------------------------------------------------*/
+     Purpose: Converts a character into a memptr. 
+     ------------------------------------------------------------------------------*/
     
-    METHOD PUBLIC STATIC CHARACTER Cipher(INPUT data AS CHARACTER, INPUT privateKey AS CHARACTER  ):
+    METHOD PRIVATE STATIC MEMPTR CharToMemptr( INPUT charValue AS CHARACTER ):
         
-        DEFINE VARIABLE result       AS CHARACTER NO-UNDO.
-        DEFINE VARIABLE resultlc     AS LONGCHAR  NO-UNDO.
-        
-        DEFINE VARIABLE datalc       AS LONGCHAR  NO-UNDO.
-        DEFINE VARIABLE privateKeylc AS LONGCHAR  NO-UNDO.
+        DEFINE VARIABLE longCharValue AS LONGCHAR NO-UNDO.
         
         ASSIGN
-            datalc       = data
-            privateKeylc = privateKey.
+            longCharValue = CharValue.
         
-        resultlc = Cipher(INPUT datalc, INPUT privateKeylc ).
+        RETURN CharToMemptr(INPUT longCharValue).
+
+    END METHOD.
+    
+    /*------------------------------------------------------------------------------
+     Purpose: Converts a longchar into a memptr. 
+    ------------------------------------------------------------------------------*/
+
+    METHOD PRIVATE STATIC MEMPTR CharToMemptr( INPUT longcharValue AS LONGCHAR ):
         
-        RETURN STRING( resultlc ).
+        DEFINE VARIABLE tempMemptr          AS MEMPTR  NO-UNDO.
+        DEFINE VARIABLE longcharValueLength AS INTEGER NO-UNDO.
+        
+        longcharValueLength = LENGTH(longcharValue, "RAW").
+        
+        set-size(tempMemptr) = 0. 
+        set-size(tempMemptr) = longcharValueLength.
+        put-string(tempMemptr, 1, longcharValueLength) = longcharValue.
+        
+        RETURN tempMemptr.
+        
+        FINALLY:
+            set-size(tempMemptr) = 0.
+        END. 
+
+    END METHOD.
+    
+    /*------------------------------------------------------------------------------
+     Purpose: Encrypt/Decrypt character 
+    ------------------------------------------------------------------------------*/
+
+    METHOD PUBLIC STATIC CHARACTER Cipher(INPUT data AS CHARACTER, INPUT privateKey AS CHARACTER  ):
+        
+        DEFINE VARIABLE resultlc         AS LONGCHAR NO-UNDO.
+        DEFINE VARIABLE cipherMemptr     AS MEMPTR   NO-UNDO.
+        DEFINE VARIABLE inCharacertLimit AS INTEGER  NO-UNDO INITIAL 0X8000. //32K character limit. 
+        
+        ASSIGN  
+            inCharacertLimit = MINIMUM(inCharacertLimit, LENGTH(data,"RAW") ).
+        
+        cipherMemptr = Cipher(INPUT CharToMemptr(INPUT data), INPUT  CharToMemptr(INPUT privateKey)).
+        
+        //** Return back the first 32K characters or less **/
+        RETURN GET-STRING(cipherMemptr, 1, inCharacertLimit).
+        
+        FINALLY:
+            set-size(cipherMemptr) = 0.
+        END.
         
     END METHOD.
     
-    METHOD PUBLIC STATIC CHARACTER Cipher(INPUT data AS CHARACTER, INPUT privateKey AS LONGCHAR):
-        
-        DEFINE VARIABLE result   AS CHARACTER NO-UNDO.
-        DEFINE VARIABLE resultlc AS LONGCHAR  NO-UNDO.
-        DEFINE VARIABLE datalc   AS LONGCHAR  NO-UNDO.
-        
-        ASSIGN
-            datalc = data.
-            
-        resultlc = Cipher(INPUT datalc, INPUT privateKey ).
-        
-        RETURN STRING(resultlc).
-        
-    END METHOD.    
-    
     METHOD PUBLIC STATIC LONGCHAR Cipher(INPUT data AS LONGCHAR, INPUT privateKey AS CHARACTER):
         
-        DEFINE VARIABLE result       AS CHARACTER NO-UNDO.
-        DEFINE VARIABLE resultlc     AS LONGCHAR  NO-UNDO.
+        DEFINE VARIABLE resultlc     AS LONGCHAR NO-UNDO.
+        DEFINE VARIABLE cipherMemptr AS MEMPTR   NO-UNDO.
         
-        DEFINE VARIABLE privateKeylc AS LONGCHAR  NO-UNDO.
+        cipherMemptr = Cipher(INPUT CharToMemptr(INPUT data), INPUT  CharToMemptr(INPUT privateKey)).
         
-        ASSIGN
-            privateKeylc = privateKey
-            resultlc     = Cipher(INPUT data, INPUT privateKeylc ).
+        COPY-LOB FROM OBJECT cipherMemptr TO OBJECT resultlc.
         
-        RETURN STRING( resultlc ).
-        
-    END METHOD.    
-    
-    METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS LONGCHAR  ):
-        
-        DEFINE VARIABLE privateKeyMemptr AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE privateKeyLength AS INTEGER NO-UNDO.
-        
-        ASSIGN
-            privateKeyLength = LENGTH(privateKey).
-            
-        set-size(privateKeyMemptr) = 0.
-        set-size(privateKeyMemptr) = privateKeyLength.
-        put-string(privateKeyMemptr, 1, privateKeyLength) = privateKey.
-        
-        RETURN Cipher(INPUT data, INPUT privateKeyMemptr ).
+        RETURN resultlc .
         
         FINALLY:
-            set-size(privateKeyMemptr) = 0.
+            set-size(cipherMemptr) = 0.
         END.
         
-    END METHOD.       
+    END METHOD.    
     
     METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS CHARACTER  ):
         
-        DEFINE VARIABLE privateKeyMemptr AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE privateKeyLength AS INTEGER NO-UNDO.
-        
-        ASSIGN
-            privateKeyLength = LENGTH(privateKey).
-            
-        set-size(privateKeyMemptr) = 0.
-        set-size(privateKeyMemptr) = privateKeyLength.
-        put-string(privateKeyMemptr, 1, privateKeyLength) = privateKey.
-        
-        RETURN Cipher(INPUT data, INPUT privateKeyMemptr).
-        
-        FINALLY:
-            set-size(privateKeyMemptr) = 0.
-            
-        END.
-        
-    END METHOD.    
-    
-    METHOD PUBLIC STATIC LONGCHAR Cipher(INPUT data AS LONGCHAR, INPUT privateKey AS LONGCHAR  ):
-        
-        DEFINE VARIABLE dataMemptr       AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE privateKeyMemptr AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE cipherMemptr     AS MEMPTR  NO-UNDO.
-        DEFINE VARIABLE dataLength       AS INTEGER NO-UNDO.
-        DEFINE VARIABLE privateKeyLength AS INTEGER NO-UNDO.
-        
-        ASSIGN
-            dataLength       = LENGTH(data)
-            privateKeyLength = LENGTH(privateKey).
-        
-        IF dataLength = 0 OR privateKeyLength EQ 0 THEN  
-            RETURN ERROR "Data or private Key is zero length". 
-            
-        set-size(dataMemptr) = 0.
-        set-size(dataMemptr) = dataLength.
-        set-size(privateKeyMemptr) = 0.
-        set-size(privateKeyMemptr) = privateKeyLength.
-        set-size(cipherMemptr) = 0.     
-        
-        put-string(dataMemptr, 1, dataLength) = data.
-        put-string(privateKeyMemptr, 1, privateKeyLength) = privateKey.
-        
-        cipherMemptr = Cipher(INPUT dataMemptr, INPUT privateKeyMemptr).
-        
-        RETURN GET-STRING(cipherMemptr, 1, dataLength).
-
-        FINALLY:
-            
-            set-size(cipherMemptr) = 0.
-            set-size(dataMemptr) = 0.
-            set-size(privateKeyMemptr) = 0.
-            
-        END.
+        RETURN Cipher(INPUT data, INPUT CharToMemptr(INPUT privateKey)).
         
     END METHOD.    
     
     METHOD PUBLIC STATIC MEMPTR Cipher(INPUT data AS MEMPTR, INPUT privateKey AS MEMPTR  ):
         
-        
-        IF GET-SIZE(privateKey) < 1 OR get-size(privateKey) > 256 THEN
+        IF GET-SIZE(privateKey) LT 1 OR 
+            get-size(privateKey) GT 0x100 THEN
             RETURN ERROR "Invalid password length".
         
         /* Initialise */
@@ -198,11 +152,8 @@ CLASS rc4:
         RETURN PRGA(INPUT data ).
         
         FINALLY:
-            
-        
-            set-size(data) = 0.
+            set-size(data)       = 0.
             set-size(privateKey) = 0.
-            
         END.
 
     END METHOD.
@@ -213,8 +164,8 @@ CLASS rc4:
     ------------------------------------------------------------------------------*/
 
     METHOD PUBLIC STATIC LOGICAL CipherFile( INPUT dataSourceFilename AS CHARACTER, 
-                                             INPUT dataTargetFilename AS CHARACTER, 
-                                             INPUT privateKey         AS CHARACTER):
+        INPUT dataTargetFilename AS CHARACTER, 
+        INPUT privateKey         AS CHARACTER):
         
         DEFINE VARIABLE result     AS LOGICAL NO-UNDO.
         DEFINE VARIABLE dataSource AS MEMPTR  NO-UNDO.
@@ -227,6 +178,12 @@ CLASS rc4:
         COPY-LOB FROM OBJECT dataTarget TO FILE dataTargetFilename.
         
         RETURN (IF SEARCH(dataTargetFilename) NE ? THEN TRUE ELSE FALSE).
+        
+        finally:
+            set-size(dataSource) = 0.
+            set-size(dataTarget) = 0.
+                
+        end.
         
     END METHOD.
 
@@ -248,7 +205,7 @@ CLASS rc4:
         EMPTY TEMP-TABLE ttS.
         EMPTY TEMP-TABLE ttPrivateKey.
     
-        DO i = 0 TO 255:
+        DO i = 0 TO 0xFF:
             CREATE ttS.
             ASSIGN
                 ttS.indexPos  = i
@@ -268,12 +225,12 @@ CLASS rc4:
         ASSIGN
             j = 0.
 
-        DO i = 0 TO 255:
-            j = (j + StreamByteValue(i) + KeyByteValue( i MOD privateKeyLength )) MOD 256.
+        DO i = 0 TO 0xFF:
+            j = (j + StreamByteValue(i) + KeyByteValue( i MOD privateKeyLength )) MOD 0x100.
             Swap(i, j).
         END.
         
-        RETURN .
+        RETURN.
 
     END METHOD.
 
@@ -307,29 +264,35 @@ CLASS rc4:
 
         DO i = 1 TO inputDataLength:
             
-            IF ETIME MOD 500 EQ 0 THEN 
+            /** Publis Stream Progress every 2 seconds.**/
+            IF ETIME MOD 2000 EQ 0 THEN
+            DO: 
+                StreamProgress:Publish(INPUT i, INPUT inputDataLength).
                 PROCESS EVENTS.
+            END.
             
             ASSIGN
-                x = (x + 1) MOD 256
-                y = (y + StreamByteValue(x)) MOD 256.
+                x = (x + 1) MOD 0x100
+                y = (y + StreamByteValue(x)) MOD 0x100.
 
             Swap(x, y).
             
             ASSIGN
-                privateKeyStreamByte = StreamByteValue( (StreamByteValue(x) + StreamByteValue(y)) MOD 256)
+                privateKeyStreamByte = StreamByteValue( (StreamByteValue(x) + StreamByteValue(y)) MOD 0x100)
                 byteToEncrypt        = GET-BYTE(inputData, i).
                 
             put-byte(outputData,i) = bitXOR( byteToEncrypt , privateKeyStreamByte ).
-        
         END.
+        /** 100% complete **/
+        StreamProgress:Publish(INPUT inputDataLength, INPUT inputDataLength).
+        
     
         RETURN outputData.
 
     END METHOD.
 
     /*------------------------------------------------------------------------------
-     Purpose: Helper Method to convert a string into HEX notation.
+     Purpose: Helper method to convert a string into HEX notation.
     ------------------------------------------------------------------------------*/
     
     METHOD PUBLIC STATIC LONGCHAR StringToHex( INPUT stringData AS CHARACTER ):
@@ -359,11 +322,12 @@ CLASS rc4:
         
         END.
         
+        /** Format the hex output to include a SPACE after every 2 character.**/
         IF formatted THEN
         DO:
             
             i = 1.
-            DO WHILE i < length(result):
+            DO WHILE i < LENGTH(result):
                 SUBSTRING(result, i, 0, "CHARACTER" ) = " ".
                 i = i + 3.  // move along to the 3rd character
             END.
@@ -401,6 +365,11 @@ CLASS rc4:
             buffer2.valueByte = temp.
         
         RETURN.
+        
+        FINALLY:
+            RELEASE buffer1.
+            RELEASE buffer2.
+        END.
 
     END METHOD.
 
