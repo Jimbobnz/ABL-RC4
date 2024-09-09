@@ -18,20 +18,17 @@ BLOCK-LEVEL ON ERROR UNDO, THROW.
 
 CLASS rc4:
     
-    DEFINE STATIC TEMP-TABLE ttPrivateKey NO-UNDO
-        FIELD indexPos  AS INTEGER
-        FIELD valueByte AS INTEGER
-        INDEX idxIndexPos IS PRIMARY UNIQUE
-        indexPos.
-        .
-
-    DEFINE STATIC TEMP-TABLE ttS NO-UNDO
-        FIELD indexPos  AS INTEGER
-        FIELD valueByte AS INTEGER
-        INDEX idxIndexPos IS PRIMARY UNIQUE
-        indexPos. 
-
+    define stream sDebug.
+    
     DEFINE PUBLIC STATIC EVENT StreamProgress SIGNATURE VOID (INPUT streamPos AS DECIMAL, INPUT streamSize AS DECIMAL).
+
+    DEFINE PRIVATE STATIC PROPERTY PrivateKey AS INTEGER EXTENT 256 NO-UNDO 
+    GET.
+    SET.
+    
+    DEFINE PRIVATE STATIC PROPERTY StreamKey AS INTEGER EXTENT 256 NO-UNDO 
+    GET.
+    SET.  
 
     /*------------------------------------------------------------------------------
      Purpose: bitXOR method because OpenEdge ABL does not have it's own bitwise opertor
@@ -182,7 +179,6 @@ CLASS rc4:
         finally:
             set-size(dataSource) = 0.
             set-size(dataTarget) = 0.
-                
         end.
         
     END METHOD.
@@ -201,35 +197,23 @@ CLASS rc4:
         ASSIGN
             privateKeyLength = GET-SIZE(privateKey).
     
-        /* Initialize the S temp-table array */
-        EMPTY TEMP-TABLE ttS.
-        EMPTY TEMP-TABLE ttPrivateKey.
-    
         DO i = 0 TO 0xFF:
-            CREATE ttS.
-            ASSIGN
-                ttS.indexPos  = i
-                ttS.valueByte = i.
-            RELEASE ttS.
+            StreamKey[i + 1] = i.
         END.
     
         DO i = 1 TO privateKeyLength :
-            CREATE ttPrivateKey.
-        
-            ASSIGN
-                ttPrivateKey.indexPos  = i - 1
-                ttPrivateKey.valueByte = GET-BYTE(privateKey, i).
-            RELEASE ttPrivateKey.    
+            assign
+                rc4:PrivateKey[i] = GET-BYTE(privateKey, i).
         END.
     
         ASSIGN
             j = 0.
-
+            
         DO i = 0 TO 0xFF:
             j = (j + StreamByteValue(i) + KeyByteValue( i MOD privateKeyLength )) MOD 0x100.
             Swap(i, j).
         END.
-        
+                
         RETURN.
 
     END METHOD.
@@ -264,7 +248,7 @@ CLASS rc4:
 
         DO i = 1 TO inputDataLength:
             
-            /** Publis Stream Progress every 2 seconds.**/
+            /** Publish the stream progress every 2 seconds.**/
             IF ETIME MOD 2000 EQ 0 THEN
             DO: 
                 StreamProgress:Publish(INPUT i, INPUT inputDataLength).
@@ -353,23 +337,11 @@ CLASS rc4:
         
         DEFINE VARIABLE temp AS INTEGER NO-UNDO.
     
-        DEFINE BUFFER buffer1 FOR TEMP-TABLE ttS.
-        DEFINE BUFFER buffer2 FOR TEMP-TABLE ttS.
-    
-        FIND buffer1 WHERE buffer1.indexPos EQ i.
-        FIND buffer2 WHERE buffer2.indexPos EQ j.
-    
-        ASSIGN
-            temp              = buffer1.valueByte
-            buffer1.valueByte = buffer2.valueByte
-            buffer2.valueByte = temp.
-        
+        temp = rc4:StreamKey[i + 1].
+        rc4:StreamKey[i + 1] = rc4:StreamKey[j + 1].
+        rc4:StreamKey[j + 1] = temp.
+            
         RETURN.
-        
-        FINALLY:
-            RELEASE buffer1.
-            RELEASE buffer2.
-        END.
 
     END METHOD.
 
@@ -380,11 +352,7 @@ CLASS rc4:
 
     METHOD PRIVATE STATIC INTEGER KeyByteValue( INPUT pIndexPos AS INTEGER ):
             
-        DEFINE BUFFER ttPrivateKeyBuffer FOR TEMP-TABLE ttPrivateKey.
-    
-        FIND ttPrivateKeyBuffer WHERE ttPrivateKeyBuffer.indexPos EQ pIndexPos.
-    
-        RETURN ttPrivateKeyBuffer.valueByte.
+        return rc4:PrivateKey[pIndexPos + 1 ] .
 
     END METHOD.
 
@@ -395,12 +363,8 @@ CLASS rc4:
 
     METHOD PRIVATE STATIC INTEGER StreamByteValue( INPUT pIndexPos AS INTEGER ):
         
-        DEFINE BUFFER ttBuffer FOR TEMP-TABLE ttS.
-    
-        FIND ttBuffer WHERE ttBuffer.indexPos EQ pIndexPos.
-    
-        RETURN ttBuffer.valueByte.
-
+        return rc4:StreamKey[pIndexPos + 1]. 
+        
     END METHOD.
 
 END CLASS.
